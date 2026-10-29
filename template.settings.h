@@ -20,6 +20,7 @@
 #define BAUD_RATE 115200
 #define RXD2 16
 #define TXD2 17
+#define REBOOT_INTERVAL 1600000 
 
 // Change LED_PIN definition to actual setup
 //#define LED_PIN LED_BUILTIN
@@ -79,17 +80,16 @@
 // Nothing to change below - globals to make it all work as simple as possible
 char telegram[P1_MAXLINELENGTH];
 
-long LAST_UPDATE_SENT = 0;
-long LAST_FULL_UPDATE_SENT = 0;
+unsigned long LAST_UPDATE_SENT = 0;
+unsigned long LAST_FULL_UPDATE_SENT = 0;
 
 struct TelegramDecodedObject
 {
   String name;
   String value;
+  String pendingValue; // read from the current telegram, committed to value when its CRC is valid
   char code[16];
   bool sendData = true;
 };
 
 tc::vector<struct TelegramDecodedObject> telegramObjects;
-
-unsigned int currentCRC = 0;

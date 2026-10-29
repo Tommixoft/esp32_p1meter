@@ -24,7 +24,7 @@ Setting up your Arduino IDE:
 - Ensure you have selected the right board (you might need to install your esp32board in the Arduino IDE).
 - Using the Tools->Manage Libraries... install `PubSubClient`, `ArduinoJson`, and `tiny-collections`.
 - I have tested this on the 240 MHz and 160 MHz CPU frequency mode, pick either one. It has worked but not for long 😁. I've added `CPU_FREQ` constant to set CPU frequency to as low value as your board supports to assign more power from P1 port to the most important WiFi connection. In my case it's 80 MHz. It has been working well since the change due to no heavy calculations in the code.
-- I have also added `TURN_OFF_WIFI_PS` define disabled WiFi power saving by executing `esp_wifi_set_ps(WIFI_PS_NONE)`. Comment it out if you think WiFi connection will be stable.
+- I have also added `TURN_OFF_WIFI_PS` define disabled WiFi power saving by executing `WiFi.setSleep(false)`. Comment it out if you think WiFi connection will be stable.
 - Copy file `template.settings.h` to `settings.h` and change values accordingly in it.
 - Write to your device via USB the first time, you can do it OTA all times thereafter.
 

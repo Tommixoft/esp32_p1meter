@@ -1,13 +1,18 @@
 #include <ArduinoOTA.h>
 #include <PubSubClient.h>
-#include <esp_wifi.h>
 #include <WiFi.h>
 #include <ESPmDNS.h>
 #include <ArduinoJson.h>
 #include <tiny-collections.h>
-
 #include "settings.h"
 #include "dsmr_map.h"
+
+// debug() compiles to nothing without DEBUG, so its String arguments are never built
+#ifdef DEBUG
+  #define debug(msg) debugPrint(msg)
+#else
+  #define debug(msg)
+#endif
 
 WiFiClient espClient;
 PubSubClient mqttClient(espClient);
@@ -16,11 +21,6 @@ PubSubClient mqttClient(espClient);
             Main Setup
  ***********************************/
 void setup() {
-  // Initialize pins and blink once for setup start
-  pinMode(LED_PIN, OUTPUT);
-  digitalWrite(LED_PIN, LOW);
-  blinkLed(1, 500);
-
   // Force CPU frequency if constant is specified
   if (CPU_FREQ > 0) {
     setCpuFrequencyMhz(CPU_FREQ);
@@ -28,15 +28,13 @@ void setup() {
 
   Serial.begin(BAUD_RATE);
 
-#ifdef DEBUG
-  // Blinking 2 times long to indicate DEBUG mode
+  #ifdef DEBUG
   debug("Booting - DEBUG mode on");
-  blinkLed(2, 2000);
-#endif
+  #endif
 
   makeSureWiFiConnected(true);
 
-  MDNS.begin(String(HOSTNAME).c_str());
+  MDNS.begin(HOSTNAME);
   delay(1000);
 
   setupOTA();
@@ -46,45 +44,38 @@ void setup() {
 
   setupDataReadout();
 
-#ifndef TEST
+  // RX buffer size must be set before begin(), otherwise it stays at the 256 byte default
+  Serial2.setRxBufferSize(1700);
   Serial2.begin(BAUD_RATE, SERIAL_8N1, RXD2, TXD2, true);
-#endif
 
   debug("System initialised successfully!");
-
-  blinkLed(5, 500);  // Blink 5 times to indicate end of setup
 }
 
 /***********************************
             Main Loop
  ***********************************/
 void loop() {
-  long now = millis();
+  unsigned long now = millis();
 
-  makeSureWiFiConnected(false);
-
-  ArduinoOTA.handle();
-
-  makeSureMqttConnected();
-  mqttClient.loop();
- 
-  // Check if we want a full update of all the data including the unchanged data.
-  if (now - LAST_FULL_UPDATE_SENT > UPDATE_FULL_INTERVAL) {
-    for (int i = 0; i < telegramObjects.size(); i++) {
-      telegramObjects[i].sendData = true;
-      LAST_FULL_UPDATE_SENT = millis();
-    }
+  if (REBOOT_INTERVAL > 0 && now >= REBOOT_INTERVAL) {
+    ESP.restart();
   }
 
-  if (now - LAST_UPDATE_SENT > UPDATE_INTERVAL) {
-#ifdef TEST
-    if (readTestSerial()) {
-#else
-    if (readP1Serial()) {
-#endif
-      LAST_UPDATE_SENT = millis();
-      sendDataToBroker();
-    }
+  makeSureWiFiConnected(false);
+  ArduinoOTA.handle();
+  makeSureMqttConnected();
+  mqttClient.loop();
+
+  // Metrics are not retained, so unchanged values are republished on this interval
+  if (now - LAST_FULL_UPDATE_SENT > UPDATE_FULL_INTERVAL) {
+    LAST_FULL_UPDATE_SENT = now;
+    markAllForSending();
+  }
+
+  // Read every telegram so the UART buffer never holds stale data, publish changes on interval
+  if (readP1Serial() && now - LAST_UPDATE_SENT > UPDATE_INTERVAL) {
+    LAST_UPDATE_SENT = now;
+    sendDataToBroker();
   }
 }
 
@@ -96,15 +87,15 @@ void loop() {
 */
 void setupOTA() {
   ArduinoOTA.onStart([]() {
-              String type;
-              if (ArduinoOTA.getCommand() == U_FLASH)
-                type = "sketch";
-              else  // U_SPIFFS
-                type = "filesystem";
+      String type;
+      if (ArduinoOTA.getCommand() == U_FLASH)
+        type = "sketch";
+      else // U_SPIFFS
+        type = "filesystem";
 
-              // NOTE: if updating SPIFFS this would be the place to unmount SPIFFS using SPIFFS.end()
-              Serial.println("Start updating " + type);
-            })
+      // NOTE: if updating SPIFFS this would be the place to unmount SPIFFS using SPIFFS.end()
+      Serial.println("Start updating " + type);
+    })
     .onEnd([]() {
       Serial.println("\nEnd");
     })
@@ -124,7 +115,7 @@ void setupOTA() {
       else if (error == OTA_END_ERROR)
         Serial.println("End Failed");
     });
-  ArduinoOTA.setHostname(String(HOSTNAME).c_str());
-  ArduinoOTA.setPasswordHash(String(OTA_PASSWORD_HASH).c_str());
+  ArduinoOTA.setHostname(HOSTNAME);
+  ArduinoOTA.setPasswordHash(OTA_PASSWORD_HASH);
   ArduinoOTA.begin();
 }

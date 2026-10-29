@@ -1,72 +1,67 @@
-#ifdef __cplusplus
-  extern "C" {
-#endif
-    uint8_t temprature_sens_read();
-#ifdef __cplusplus
-}
-#endif
-uint8_t temprature_sens_read();
-
-void blinkLed(int numberOfBlinks, int msBetweenBlinks) {
-  int msDurationForLow=200;
-  for (int i = 0; i < numberOfBlinks; i++) {
-    if (i > 0) { 
-      delay(msDurationForLow);
-    }
-    digitalWrite(LED_PIN, HIGH);
-    delay(msBetweenBlinks);
-    digitalWrite(LED_PIN, LOW);
-  }
-}
-
 void makeSureWiFiConnected(bool setupMode) {
+ 
   if (setupMode) {
-#ifdef TURN_OFF_WIFI_PS
-    //turn WiFi power saving mode off
-    esp_wifi_set_ps(WIFI_PS_NONE);
-#endif    
-
+    WiFi.setHostname(HOSTNAME);
     WiFi.mode(WIFI_STA);
-    WiFi.begin(WIFI_SSID, WIFI_PASS);
+
+    #ifdef TURN_OFF_WIFI_PS
+      // Turn WiFi power saving mode off. Must run after WiFi.mode(), before it the driver isn't started
+      WiFi.setSleep(false);
+    #endif
+
+    #ifdef FORCE_WIFI_BSSID
+      WiFi.begin(WIFI_SSID, WIFI_PASS, 0, WIFI_BSSID);
+    #else
+      WiFi.begin(WIFI_SSID, WIFI_PASS, 0);
+    #endif 
 
     delay(3000);
   }
   
-  if (WiFi.status() != WL_CONNECTED) {
-    blinkLed(20, 50);  // Blink fast to indicate failed WiFi connection
-    WiFi.begin(WIFI_SSID, WIFI_PASS);
+  if (WiFi.status() != WL_CONNECTED) 
+  {
+
+    #ifdef FORCE_WIFI_BSSID
+      WiFi.begin(WIFI_SSID, WIFI_PASS, 0, WIFI_BSSID); 
+    #else
+      WiFi.begin(WIFI_SSID, WIFI_PASS, 0);
+    #endif     
 
     int _retries = WIFI_MAX_RECONNECT_TRIES;
-    while (WiFi.waitForConnectResult() != WL_CONNECTED && _retries > 0) {
-#ifdef DEBUG
-      Serial.print("WiFi Connection Failed! Retries left: ");
-      Serial.println(_retries);
-#endif
+
+    while (WiFi.waitForConnectResult() != WL_CONNECTED && _retries > 0) 
+    {
+    
+      #ifdef DEBUG
+          Serial.print("WiFi Connection Failed! Retries left: ");
+          Serial.println(_retries);
+      #endif
+
       _retries--;
       delay(3000);
     }
-    if (WiFi.status() != WL_CONNECTED) {
-      blinkLed(10, 50);  // Blink fast to indicate failed WiFi connection
-#ifdef DEBUG
-      Serial.println("Connection Failed! Rebooting...");
-#endif
+
+    if (WiFi.status() != WL_CONNECTED) 
+    {
+      #ifdef DEBUG
+        Serial.println("Connection Failed! Rebooting...");
+      #endif
       ESP.restart();
     }
   }
-  if (setupMode) {
+  if (setupMode) 
+  {
     debug ("WiFi Ready. IP: " + WiFi.localIP().toString() + ", RSSI: " + String(WiFi.RSSI()));
   }
 }
 
-void debug(String msg) {
-#ifdef DEBUG
-  unsigned int _temp = (temprature_sens_read() - 32) / 1.8;
-  msg += " (T: " + String(_temp) + "C)";
+// Called through the debug() macro, only when DEBUG is defined
+void debugPrint(const String &msg) {
   Serial.println(msg);
 
-  #ifdef MQTT_DEBUGGING;
+#ifdef MQTT_DEBUGGING
+  if (mqttClient.connected()) {
     sendMQTTMessage(MQTT_DEBUG_TOPIC, msg.c_str());
-  #endif
+  }
 #endif
-  ;
 }
